@@ -33,6 +33,7 @@ Once running, send the bot any message and it is executed as a shell command in
 the current working directory. Commands:
 
 - `/start` — show status and current working directory
+- `/help` — show the command reference
 - `/pwd` — print the current working directory
 - `/cd <path>` — change the working directory for subsequent commands
 - any other text — run it as a shell command
@@ -44,7 +45,8 @@ Behavior:
 - stdout + stderr are combined, truncated to ~3500 chars, and returned in a code
   block.
 - Every command run (and every rejected/blocked attempt) is written to
-  `shell_bot.log` next to the script.
+  `shell_bot.log` next to the script. The log rotates in place (5 × 2 MiB
+  files), so it never grows unbounded — no external logrotate needed.
 
 ## Deployment
 

@@ -20,6 +20,7 @@ this file:
 """
 
 import logging
+import logging.handlers
 import os
 import re
 import subprocess
@@ -46,8 +47,14 @@ _ALLOWED_USER_ID_RAW = os.environ.get("ALLOWED_USER_ID", "").strip()
 COMMAND_TIMEOUT_SECONDS = 60
 MAX_OUTPUT_CHARS = 3500  # keep the reply under Telegram's 4096-char message cap
 
-# Where audit logs land — next to this script, regardless of cwd.
+# Where audit logs land — next to this script, regardless of cwd. Rotated in
+# place so the audit trail never grows unbounded: keep LOG_BACKUP_COUNT old
+# files of up to LOG_MAX_BYTES each (shell_bot.log, shell_bot.log.1, …). Self
+# contained, so it works identically under systemd or pm2 — no external
+# logrotate/timer needed.
 LOG_PATH = Path(__file__).resolve().parent / "shell_bot.log"
+LOG_MAX_BYTES = 2 * 1024 * 1024  # 2 MiB per file
+LOG_BACKUP_COUNT = 5             # ~10 MiB of history retained
 
 # Catastrophic commands refused even for the allowed user. These are matched as
 # regexes against the raw command text (whitespace-normalised). This is a
@@ -86,7 +93,12 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler(LOG_PATH, encoding="utf-8"),
+        logging.handlers.RotatingFileHandler(
+            LOG_PATH,
+            maxBytes=LOG_MAX_BYTES,
+            backupCount=LOG_BACKUP_COUNT,
+            encoding="utf-8",
+        ),
         logging.StreamHandler(sys.stdout),
     ],
 )
@@ -172,16 +184,37 @@ def format_reply(output: str) -> str:
 # Handlers
 # --------------------------------------------------------------------------- #
 
+HELP_TEXT = (
+    "shell_bot — run shell commands on the VPS.\n\n"
+    "Send any message and it runs as a shell command in the current working "
+    "directory. Output (stdout+stderr) comes back in a code block, truncated "
+    f"to ~{MAX_OUTPUT_CHARS} chars; commands time out after "
+    f"{COMMAND_TIMEOUT_SECONDS}s.\n\n"
+    "Commands:\n"
+    "/start — show status and current directory\n"
+    "/help — show this help\n"
+    "/pwd — print the current working directory\n"
+    "/cd <path> — change directory (no arg → home)\n\n"
+    "Catastrophic commands (rm -rf /, fork bombs, mkfs, dd if=, …) are refused."
+)
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update):
         logger.warning("REJECTED /start from %s", _describe_sender(update))
         return
     await update.message.reply_text(
         "shell_bot ready.\n"
-        f"cwd: {WORKING_DIR}\n"
-        "Send any message to run it as a shell command.\n"
-        "Use /cd <path> to change directory and /pwd to show it."
+        f"cwd: {WORKING_DIR}\n\n"
+        f"{HELP_TEXT}"
     )
+
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_allowed(update):
+        logger.warning("REJECTED /help from %s", _describe_sender(update))
+        return
+    await update.message.reply_text(HELP_TEXT)
 
 
 async def pwd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -260,6 +293,7 @@ def main() -> None:
 
     application = Application.builder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("pwd", pwd))
     application.add_handler(CommandHandler("cd", cd))
     application.add_handler(

@@ -3,6 +3,7 @@
 *.env
 !.env.example
 shell_bot.log
+shell_bot.log.*
 .venv/
 __pycache__/
 *.pyc

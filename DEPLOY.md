@@ -85,7 +85,8 @@ sudo systemctl restart shell_bot.service
   user plus the in-bot whitelist + blocklist. `NoNewPrivileges=true` is kept
   because it stops privilege escalation without limiting ordinary commands.
 - **Audit log:** the bot writes `shell_bot.log` next to the script
-  (`/opt/shell-bot/shell_bot.log`) in addition to journald.
+  (`/opt/shell-bot/shell_bot.log`) in addition to journald. It rotates itself
+  (5 × 2 MiB files), so no logrotate config or timer is needed.
 - **pm2 alternative:** if you prefer pm2 to match other bots, run
   `pm2 start /opt/shell-bot/shell_bot.py --interpreter /opt/shell-bot/.venv/bin/python --name shell_bot`
   with the env vars exported first, then `pm2 save`. systemd is recommended here
