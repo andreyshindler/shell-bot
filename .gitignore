@@ -1,0 +1,8 @@
+# Never commit secrets or runtime artifacts
+.env
+*.env
+!.env.example
+shell_bot.log
+.venv/
+__pycache__/
+*.pyc
