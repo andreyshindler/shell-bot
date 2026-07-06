@@ -56,4 +56,6 @@ python3 shell_bot.py
 ```
 
 Prefer running under `pm2` or a systemd unit so it survives reboots and
-auto-restarts on crash.
+auto-restarts on crash. A ready-to-use systemd unit (`shell_bot.service`) and
+step-by-step instructions for srv1515969 — dedicated non-root user, root-owned
+secrets file, venv — are in [DEPLOY.md](DEPLOY.md).

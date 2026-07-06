@@ -1,0 +1,55 @@
+# systemd unit for shell_bot — see DEPLOY.md for full setup.
+#
+# Install to /etc/systemd/system/shell_bot.service, then:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now shell_bot.service
+#
+# Secrets (BOT_TOKEN, ALLOWED_USER_ID) live ONLY in the root-owned env file
+# referenced below — never in this unit and never in the repo.
+#
+# NOTE ON HARDENING: this bot exists to run arbitrary shell commands as its
+# user, so aggressive filesystem sandboxing (ProtectSystem=strict, ProtectHome,
+# ReadOnlyPaths, …) would defeat its purpose and is intentionally omitted. The
+# real containment is: (1) a dedicated non-root user with only the access it
+# needs, and (2) the whitelist + blocklist inside the bot. NoNewPrivileges is
+# kept because it blocks privilege escalation (e.g. sudo/setuid) without
+# limiting ordinary commands.
+
+[Unit]
+Description=shell_bot — Telegram shell-command bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# Dedicated, unprivileged account. Create it once (see DEPLOY.md); do NOT run
+# this as root or as your own login user.
+User=shellbot
+Group=shellbot
+
+# Where the repo is checked out. The bot's own default working directory is the
+# running user's home (~), changeable per-session with /cd — independent of this.
+WorkingDirectory=/opt/shell-bot
+
+# Root-owned, 0600. Holds BOT_TOKEN and ALLOWED_USER_ID. Not in the repo.
+EnvironmentFile=/etc/shell_bot.env
+
+# Use the venv interpreter if you created one (see DEPLOY.md); otherwise
+# /usr/bin/python3 works if python-telegram-bot is installed system-wide.
+ExecStart=/opt/shell-bot/.venv/bin/python /opt/shell-bot/shell_bot.py
+
+# Survive crashes and reboots.
+Restart=on-failure
+RestartSec=5
+
+# Block privilege escalation from within executed commands. Ordinary commands
+# (git, ls, pipes, …) are unaffected; sudo/setuid binaries will not gain rights.
+NoNewPrivileges=true
+
+# Journald captures stdout/stderr; the bot also keeps its own shell_bot.log.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
