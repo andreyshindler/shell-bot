@@ -79,9 +79,12 @@ Notes:
   default working directory). To let the bot operate on the host
   filesystem instead, bind-mount a host path over that volume in
   `docker-compose.yml`.
-- Logs (`shell_bot.log`) live inside the container's `/app` dir; view them
-  with `docker compose logs -f` (also streamed to stdout) or
-  `docker compose exec shell-bot cat shell_bot.log`.
+- The repo checkout (e.g. `/home/komodo/projects/shell-bot`) is bind-mounted
+  to `/app` in the container, so `shell_bot.log` lands directly in that
+  directory on the host — view it with `tail -f shell_bot.log`, no `docker
+  exec` needed. It's also streamed to stdout, viewable with
+  `docker compose logs -f`.
 - To run without compose: `docker build -t shell-bot . && docker run -d
   --name shell-bot --restart unless-stopped -e BOT_TOKEN -e
-  ALLOWED_USER_ID -v shell-bot-home:/home/botuser shell-bot`.
+  ALLOWED_USER_ID -v shell-bot-home:/home/botuser -v
+  /home/komodo/projects/shell-bot:/app shell-bot`.
