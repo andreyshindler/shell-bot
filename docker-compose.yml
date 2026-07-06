@@ -11,8 +11,5 @@ services:
       BOT_TOKEN: ${BOT_TOKEN}
       ALLOWED_USER_ID: ${ALLOWED_USER_ID}
     volumes:
-      - shell-bot-home:/home/botuser
+      - /home/komodo/projects:/home/botuser
       - /home/komodo/projects/shell-bot:/app
-
-volumes:
-  shell-bot-home:

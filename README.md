@@ -74,19 +74,21 @@ Notes:
 
 - The container runs as a non-root user (`botuser`), built with `HOST_UID`/
   `HOST_GID` (default 1000) so it matches the host user that owns the
-  bind-mounted project dir — see below. If those don't match, the bot will
-  fail to open `shell_bot.log` with `PermissionError`.
+  bind-mounted directories below (both `/app` and `/home/botuser`). If those
+  don't match, the bot will fail to open `shell_bot.log` with
+  `PermissionError`, or fail to write files when running commands.
 - The repo checkout (e.g. `/home/komodo/projects/shell-bot`) is bind-mounted
   to `/app` in the container, so `shell_bot.log` lands directly in that
   directory on the host — view it with `tail -f shell_bot.log`, no `docker
   exec` needed. It's also streamed to stdout, viewable with
   `docker compose logs -f`.
-- Commands the bot runs still execute **inside the container**, not
-  directly on the host — `cd`, cloned repos, and any files the bot creates
-  persist in the `shell-bot-home` named volume (mounted at `/home/botuser`,
-  the bot's default working directory), not on the host filesystem.
+- The bot's default working directory (`/home/botuser`, where `/cd` and any
+  `git clone` land) is bind-mounted to the parent projects dir (e.g.
+  `/home/komodo/projects`), so cloned repos and file changes land directly on
+  the host, exactly like the non-Docker deployment — not in an isolated
+  container volume.
 - To run without compose: `docker build -t shell-bot --build-arg
   UID=$(id -u) --build-arg GID=$(id -g) . && docker run -d --name shell-bot
   --restart unless-stopped -e BOT_TOKEN -e ALLOWED_USER_ID -v
-  shell-bot-home:/home/botuser -v
+  /home/komodo/projects:/home/botuser -v
   /home/komodo/projects/shell-bot:/app shell-bot`.
