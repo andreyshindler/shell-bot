@@ -61,3 +61,27 @@ Prefer running under `pm2` or a systemd unit so it survives reboots and
 auto-restarts on crash. A ready-to-use systemd unit (`shell_bot.service`) and
 step-by-step instructions for srv1515969 — dedicated non-root user, root-owned
 secrets file, venv — are in [DEPLOY.md](DEPLOY.md).
+
+### Docker
+
+```bash
+export BOT_TOKEN="..."
+export ALLOWED_USER_ID="..."
+docker compose up -d --build
+```
+
+Notes:
+
+- The container runs as a non-root user (`botuser`, uid 1000).
+- Commands run **inside the container**, not directly on the host — `cd`,
+  cloned repos, and any files the bot creates only persist inside the
+  `shell-bot-home` named volume (mounted at `/home/botuser`, the bot's
+  default working directory). To let the bot operate on the host
+  filesystem instead, bind-mount a host path over that volume in
+  `docker-compose.yml`.
+- Logs (`shell_bot.log`) live inside the container's `/app` dir; view them
+  with `docker compose logs -f` (also streamed to stdout) or
+  `docker compose exec shell-bot cat shell_bot.log`.
+- To run without compose: `docker build -t shell-bot . && docker run -d
+  --name shell-bot --restart unless-stopped -e BOT_TOKEN -e
+  ALLOWED_USER_ID -v shell-bot-home:/home/botuser shell-bot`.

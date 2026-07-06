@@ -1,0 +1,5 @@
+.git
+shell_bot.log
+__pycache__
+*.pyc
+.env

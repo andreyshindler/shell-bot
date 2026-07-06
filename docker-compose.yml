@@ -1,0 +1,13 @@
+services:
+  shell-bot:
+    build: .
+    container_name: shell-bot
+    restart: unless-stopped
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN}
+      ALLOWED_USER_ID: ${ALLOWED_USER_ID}
+    volumes:
+      - shell-bot-home:/home/botuser
+
+volumes:
+  shell-bot-home:
