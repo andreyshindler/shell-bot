@@ -65,26 +65,28 @@ secrets file, venv — are in [DEPLOY.md](DEPLOY.md).
 ### Docker
 
 ```bash
-export BOT_TOKEN="..."
-export ALLOWED_USER_ID="..."
+cp .env.example .env && chmod 600 .env   # fill in BOT_TOKEN, ALLOWED_USER_ID,
+                                          # HOST_UID, HOST_GID (from `id -u`/`id -g`)
 docker compose up -d --build
 ```
 
 Notes:
 
-- The container runs as a non-root user (`botuser`, uid 1000).
-- Commands run **inside the container**, not directly on the host — `cd`,
-  cloned repos, and any files the bot creates only persist inside the
-  `shell-bot-home` named volume (mounted at `/home/botuser`, the bot's
-  default working directory). To let the bot operate on the host
-  filesystem instead, bind-mount a host path over that volume in
-  `docker-compose.yml`.
+- The container runs as a non-root user (`botuser`), built with `HOST_UID`/
+  `HOST_GID` (default 1000) so it matches the host user that owns the
+  bind-mounted project dir — see below. If those don't match, the bot will
+  fail to open `shell_bot.log` with `PermissionError`.
 - The repo checkout (e.g. `/home/komodo/projects/shell-bot`) is bind-mounted
   to `/app` in the container, so `shell_bot.log` lands directly in that
   directory on the host — view it with `tail -f shell_bot.log`, no `docker
   exec` needed. It's also streamed to stdout, viewable with
   `docker compose logs -f`.
-- To run without compose: `docker build -t shell-bot . && docker run -d
-  --name shell-bot --restart unless-stopped -e BOT_TOKEN -e
-  ALLOWED_USER_ID -v shell-bot-home:/home/botuser -v
+- Commands the bot runs still execute **inside the container**, not
+  directly on the host — `cd`, cloned repos, and any files the bot creates
+  persist in the `shell-bot-home` named volume (mounted at `/home/botuser`,
+  the bot's default working directory), not on the host filesystem.
+- To run without compose: `docker build -t shell-bot --build-arg
+  UID=$(id -u) --build-arg GID=$(id -g) . && docker run -d --name shell-bot
+  --restart unless-stopped -e BOT_TOKEN -e ALLOWED_USER_ID -v
+  shell-bot-home:/home/botuser -v
   /home/komodo/projects/shell-bot:/app shell-bot`.

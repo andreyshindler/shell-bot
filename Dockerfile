@@ -1,7 +1,13 @@
 FROM python:3.12-slim
 
-RUN groupadd --gid 1000 botuser \
-    && useradd --uid 1000 --gid botuser --create-home --shell /bin/bash botuser
+# Match the UID/GID of the host user that owns the bind-mounted project dir
+# (see docker-compose.yml), so files created by the bot (e.g. shell_bot.log)
+# are writable by both the container and that host user.
+ARG UID=1000
+ARG GID=1000
+
+RUN groupadd --gid ${GID} botuser \
+    && useradd --uid ${UID} --gid botuser --create-home --shell /bin/bash botuser
 
 WORKDIR /app
 
