@@ -32,7 +32,9 @@ Group=shellbot
 # running user's home (~), changeable per-session with /cd — independent of this.
 WorkingDirectory=/opt/shell-bot
 
-# Root-owned, 0600. Holds BOT_TOKEN and ALLOWED_USER_ID. Not in the repo.
+# Root-owned, 0600. Holds BOT_TOKEN and ALLOWED_USER_ID (and, if the .env
+# Mini App is enabled, WEBAPP_URL + WEBAPP_BIND — the bot then listens on that
+# loopback address for nginx to proxy). Not in the repo.
 EnvironmentFile=/etc/shell_bot.env
 
 # Use the venv interpreter if you created one (see DEPLOY.md); otherwise

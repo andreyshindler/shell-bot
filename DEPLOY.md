@@ -77,6 +77,59 @@ sudo -u shellbot /opt/shell-bot/.venv/bin/pip install -r /opt/shell-bot/requirem
 sudo systemctl restart shell_bot.service
 ```
 
+## 7. (Optional) Enable the `.env` editor Mini App
+
+`/env` opens a Telegram Mini App to view/edit the `.env` in the bot's current
+directory. It needs an HTTPS endpoint (Telegram requires HTTPS for Mini Apps).
+The bot serves the app + its API on a **loopback** port; nginx terminates TLS
+and reverse-proxies to it.
+
+1. **Add the env vars** to `/etc/shell_bot.env` (still root-owned, 0600):
+
+   ```
+   WEBAPP_URL=https://shellbot.example.com
+   WEBAPP_BIND=127.0.0.1:8081
+   ```
+
+   `WEBAPP_URL` must be the HTTPS **root** nginx serves the app from — use a
+   dedicated subdomain so the app sits at `/` (its API calls are relative).
+
+2. **nginx server block** for that subdomain (with your existing cert), proxying
+   everything to the bot's loopback port:
+
+   ```nginx
+   server {
+       listen 443 ssl;
+       server_name shellbot.example.com;
+
+       ssl_certificate     /etc/letsencrypt/live/shellbot.example.com/fullchain.pem;
+       ssl_certificate_key /etc/letsencrypt/live/shellbot.example.com/privkey.pem;
+
+       location / {
+           proxy_pass http://127.0.0.1:8081/;
+           proxy_set_header Host $host;
+           proxy_set_header X-Forwarded-For $remote_addr;
+           proxy_set_header X-Forwarded-Proto $scheme;
+       }
+   }
+   ```
+
+   `sudo nginx -t && sudo systemctl reload nginx`, then
+   `sudo systemctl restart shell_bot.service`.
+
+3. **Verify:**
+   - `/cd` into a repo that has a `.env`, then `/env` → a "✏️ Edit .env" button
+     appears. Tap it → the current contents load; change a value → **Save .env**
+     → you get a "✅ Saved" confirmation and `cat .env` shows the change. The
+     audit log shows an `ENV WRITE` line.
+   - `/cd` into a folder with no `.env`, then `/env` → replies "No .env …", no
+     button.
+   - Open `https://shellbot.example.com/api/env` directly in a browser (no
+     Telegram `initData`) → `401 unauthorized`.
+
+Leaving `WEBAPP_URL` unset keeps the feature off; `/env` then just says the Mini
+App isn't configured, and the bot behaves exactly as before.
+
 ## Notes
 
 - **Why not lock the unit down harder?** The bot's whole job is running arbitrary
