@@ -92,3 +92,29 @@ Notes:
   --restart unless-stopped -e BOT_TOKEN -e ALLOWED_USER_ID -v
   /home/komodo/projects:/home/botuser -v
   /home/komodo/projects/shell-bot:/app shell-bot`.
+- The chat keyboard has quick buttons for `git pull`, a rebuild request, and
+  `ls`. The container deliberately has no `docker` CLI or socket access — see
+  the rebuild watcher below.
+
+#### Rebuild watcher
+
+The container can't run `docker compose` itself (that would mean mounting the
+host's docker socket into it, which is effectively root on the host — too
+much blast radius for a Telegram bot to hold). Instead, its "rebuild" quick
+button just drops a marker file (`.rebuild-requested`) in the repo dir.
+`rebuild-watcher.sh`, run on the host by a systemd timer (as `komodo`, no
+elevated privileges beyond what that user already has), polls for that
+marker every 15s and does the actual `git pull && docker compose up -d
+--build` outside the container.
+
+Install it once:
+
+```bash
+sudo cp rebuild-watcher.service rebuild-watcher.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now rebuild-watcher.timer
+```
+
+Logs land in `rebuild-watcher.log` next to the script. Adjust the hardcoded
+`/home/komodo/projects/shell-bot` path in `rebuild-watcher.service` and the
+`User=` if your checkout lives elsewhere or runs as a different user.

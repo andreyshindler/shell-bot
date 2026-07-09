@@ -1,5 +1,11 @@
 FROM python:3.12-slim
 
+# git isn't in the slim base image, but the bot's whole point is running
+# commands like `git clone`/`git pull` on the user's behalf.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
 # Match the UID/GID of the host user that owns the bind-mounted project dir
 # (see docker-compose.yml), so files created by the bot (e.g. shell_bot.log)
 # are writable by both the container and that host user.

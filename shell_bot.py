@@ -27,7 +27,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from telegram import Update
+from telegram import ReplyKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
@@ -43,6 +43,12 @@ from telegram.ext import (
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 _ALLOWED_USER_ID_RAW = os.environ.get("ALLOWED_USER_ID", "").strip()
+
+# Directory the quick-command keyboard's git/docker buttons `cd` into before
+# running (see QUICK_COMMANDS below) — the repo checkout, which isn't
+# necessarily WORKING_DIR's default (home). Optional: buttons run from
+# whatever the current working directory is if unset.
+REPO_DIR = os.environ.get("REPO_DIR", "").strip()
 
 COMMAND_TIMEOUT_SECONDS = 60
 MAX_OUTPUT_CHARS = 3500  # keep the reply under Telegram's 4096-char message cap
@@ -184,6 +190,23 @@ def format_reply(output: str) -> str:
 # Handlers
 # --------------------------------------------------------------------------- #
 
+def _repo_command(command: str) -> str:
+    """Prefix a command with `cd $REPO_DIR &&` if REPO_DIR is configured."""
+    return f"cd {REPO_DIR} && {command}" if REPO_DIR else command
+
+
+QUICK_COMMANDS = ReplyKeyboardMarkup(
+    [
+        [_repo_command("git pull")],
+        # The container has no docker access (by design — see rebuild-watcher.sh).
+        # This just drops a marker file; a host-side systemd timer running
+        # outside the container does the actual git pull + rebuild.
+        [_repo_command("touch .rebuild-requested")],
+        ["ls"],
+    ],
+    resize_keyboard=True,
+)
+
 HELP_TEXT = (
     "shell_bot — run shell commands on the VPS.\n\n"
     "Send any message and it runs as a shell command in the current working "
@@ -195,6 +218,8 @@ HELP_TEXT = (
     "/help — show this help\n"
     "/pwd — print the current working directory\n"
     "/cd <path> — change directory (no arg → home)\n\n"
+    "The keyboard below has quick buttons for common commands (git pull, "
+    "rebuild, ls).\n\n"
     "Catastrophic commands (rm -rf /, fork bombs, mkfs, dd if=, …) are refused."
 )
 
@@ -206,7 +231,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "shell_bot ready.\n"
         f"cwd: {WORKING_DIR}\n\n"
-        f"{HELP_TEXT}"
+        f"{HELP_TEXT}",
+        reply_markup=QUICK_COMMANDS,
     )
 
 
@@ -214,7 +240,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not is_allowed(update):
         logger.warning("REJECTED /help from %s", _describe_sender(update))
         return
-    await update.message.reply_text(HELP_TEXT)
+    await update.message.reply_text(HELP_TEXT, reply_markup=QUICK_COMMANDS)
 
 
 async def pwd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

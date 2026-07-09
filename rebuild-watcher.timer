@@ -1,0 +1,10 @@
+[Unit]
+Description=Poll for shell-bot rebuild requests
+
+[Timer]
+OnBootSec=15s
+OnUnitActiveSec=15s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
