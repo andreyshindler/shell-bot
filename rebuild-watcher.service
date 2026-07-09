@@ -1,8 +1,0 @@
-[Unit]
-Description=shell-bot rebuild watcher (one-shot, triggered by rebuild-watcher.timer)
-
-[Service]
-Type=oneshot
-User=komodo
-WorkingDirectory=/home/komodo/projects/shell-bot
-ExecStart=/home/komodo/projects/shell-bot/rebuild-watcher.sh
