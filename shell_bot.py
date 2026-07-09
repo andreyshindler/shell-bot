@@ -198,6 +198,10 @@ def _repo_command(command: str) -> str:
 QUICK_COMMANDS = ReplyKeyboardMarkup(
     [
         [_repo_command("git pull")],
+        # The container has no docker access (by design — see rebuild-watcher.sh).
+        # This just drops a marker file; a host-side systemd timer running
+        # outside the container does the actual git pull + rebuild.
+        [_repo_command("touch .rebuild-requested")],
         ["ls"],
     ],
     resize_keyboard=True,
@@ -215,7 +219,7 @@ HELP_TEXT = (
     "/pwd — print the current working directory\n"
     "/cd <path> — change directory (no arg → home)\n\n"
     "The keyboard below has quick buttons for common commands (git pull, "
-    "ls).\n\n"
+    "rebuild, ls).\n\n"
     "Catastrophic commands (rm -rf /, fork bombs, mkfs, dd if=, …) are refused."
 )
 

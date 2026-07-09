@@ -4,6 +4,8 @@
 !.env.example
 shell_bot.log
 shell_bot.log.*
+.rebuild-requested
+rebuild-watcher.log
 .venv/
 __pycache__/
 *.pyc
