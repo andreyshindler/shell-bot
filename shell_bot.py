@@ -304,7 +304,8 @@ QUICK_COMMANDS = ReplyKeyboardMarkup(
         # This just drops a marker file; a host-side systemd timer running
         # outside the container does the actual git pull + rebuild.
         [_repo_command("touch .rebuild-requested")],
-        ["ls"],
+        # -A so dotfiles (.env, .git, …) show up; plain `ls` hides them.
+        ["ls -A"],
     ],
     resize_keyboard=True,
 )
