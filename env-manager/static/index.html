@@ -9,14 +9,19 @@
     color: var(--tg-theme-text-color, #000);
   }
   h1 { font-size: 1.1em; }
-  #files { list-style: none; padding: 0; }
-  #files li {
+  #files { display: flex; flex-direction: column; gap: 6px; }
+  #files button {
+    display: block;
+    width: 100%;
+    text-align: left;
     padding: 10px;
-    margin-bottom: 6px;
     border-radius: 8px;
     background: var(--tg-theme-secondary-bg-color, #f0f0f0);
-    cursor: pointer;
+    color: inherit;
+    border: none;
     font-family: monospace;
+    font-size: 1em;
+    cursor: pointer;
   }
   #editor { display: none; }
   #editor textarea {
@@ -39,9 +44,11 @@
   #error { color: #d33; white-space: pre-wrap; }
 </style>
 
-<h1>.env files</h1>
-<div id="error"></div>
-<ul id="files"></ul>
+<div id="file-list">
+  <h1>.env files</h1>
+  <div id="error"></div>
+  <div id="files"></div>
+</div>
 
 <div id="editor">
   <button id="back">&larr; Back</button>
@@ -82,13 +89,14 @@
         const list = document.getElementById("files");
         list.innerHTML = "";
         data.envs.forEach((relPath) => {
-          const li = document.createElement("li");
-          li.textContent = relPath;
-          li.onclick = () => openFile(relPath);
-          list.appendChild(li);
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.textContent = relPath;
+          btn.onclick = () => openFile(relPath);
+          list.appendChild(btn);
         });
         if (data.envs.length === 0) {
-          list.innerHTML = "<li style='cursor:default'>No .env files found.</li>";
+          list.innerHTML = "<p>No .env files found.</p>";
         }
       })
       .catch((err) => showError(err.message));
@@ -97,7 +105,7 @@
   function openFile(relPath) {
     api("/env/api/envs/" + encodeURIComponent(relPath).replace(/%2F/g, "/"))
       .then((data) => {
-        document.getElementById("files").parentElement.style.display = "none";
+        document.getElementById("file-list").style.display = "none";
         document.getElementById("editor").style.display = "block";
         document.getElementById("editing-path").textContent = data.path;
         document.getElementById("content").value = data.content;
@@ -109,8 +117,7 @@
 
   document.getElementById("back").onclick = () => {
     document.getElementById("editor").style.display = "none";
-    document.querySelector("h1").style.display = "block";
-    document.getElementById("files").style.display = "block";
+    document.getElementById("file-list").style.display = "block";
     showError("");
   };
 
