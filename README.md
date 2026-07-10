@@ -127,21 +127,25 @@ root (`/home/komodo/projects`), opened via the "🔐 Manage .env files" button
 in shell_bot's keyboard. Three pieces, all in `docker-compose.yml`:
 
 - **`env-manager`** — a small FastAPI backend + single-page frontend
-  (`env-manager/`). Every request must carry a Telegram-signed `initData`
-  proving it's `ALLOWED_USER_ID` (validated via HMAC against `BOT_TOKEN`,
-  same algorithm Telegram documents for Mini Apps); file paths are resolved
-  and confirmed to stay inside the projects root and end in `.env` before
-  any read/write. This is the only thing standing between the public
-  internet and every project's secrets, so don't weaken it.
+  (`env-manager/`), with all its routes (page + API) under a `/env` prefix
+  the app owns itself — so Caddy can stay a plain reverse proxy with no path
+  rewriting. Every request must carry a Telegram-signed `initData` proving
+  it's `ALLOWED_USER_ID` (validated via HMAC against `BOT_TOKEN`, same
+  algorithm Telegram documents for Mini Apps); file paths are resolved and
+  confirmed to stay inside the projects root and end in `.env` before any
+  read/write. This is the only thing standing between the public internet
+  and every project's secrets, so don't weaken it.
 - **`caddy`** — reverse-proxies `https://srv1515969.hstgr.cloud` (or
-  whatever hostname you set in `Caddyfile` and `ENV_MINIAPP_URL`) to
-  `env-manager`, auto-provisioning a Let's Encrypt certificate. Needs ports
-  80 and 443 free on the host — check `sudo ss -tlnp | grep -E ':80|:443'`
-  first; if something else (e.g. a control panel) already holds them, this
-  won't be able to get a certificate.
+  whatever hostname you set in `Caddyfile`) straight to `env-manager` on
+  port 8080, no path matching needed, auto-provisioning a Let's Encrypt
+  certificate. Needs ports 80 and 443 free on the host — check
+  `sudo ss -tlnp | grep -E ':80|:443'` first; if something else (e.g. a
+  control panel) already holds them, this won't be able to get a
+  certificate.
 - **`ENV_MINIAPP_URL`** (set on the `shell-bot` service) — the HTTPS URL
-  shell_bot puts on the Mini App button. Must match the hostname in
-  `Caddyfile`.
+  shell_bot puts on the Mini App button, e.g.
+  `https://srv1515969.hstgr.cloud/env`. Must match the hostname in
+  `Caddyfile` plus the `/env` path the app is mounted under.
 
 No BotFather registration is required for this — a `web_app` button in a
 private-chat keyboard just needs a valid HTTPS URL.

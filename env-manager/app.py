@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 from urllib.parse import parse_qsl
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -36,6 +36,10 @@ ALLOWED_USER_ID = int(_ALLOWED_USER_ID_RAW)
 _SKIP_DIR_NAMES = {".git", "node_modules", ".venv", "__pycache__"}
 
 app = FastAPI()
+# Everything lives under /env — Caddy just plain-proxies to this app, no path
+# rewriting on its end, so the served URL is exactly .../env consistently for
+# both the page and its API calls.
+router = APIRouter(prefix="/env")
 
 
 def validate_init_data(init_data: str) -> dict:
@@ -92,12 +96,12 @@ class EnvContent(BaseModel):
     content: str
 
 
-@app.get("/")
+@router.get("")
 def index():
     return FileResponse(Path(__file__).resolve().parent / "static" / "index.html")
 
 
-@app.get("/api/envs")
+@router.get("/api/envs")
 def list_envs(_user: dict = Depends(require_auth)):
     found = []
     for path in PROJECTS_ROOT.rglob("*.env"):
@@ -107,7 +111,7 @@ def list_envs(_user: dict = Depends(require_auth)):
     return {"envs": sorted(found)}
 
 
-@app.get("/api/envs/{rel_path:path}")
+@router.get("/api/envs/{rel_path:path}")
 def read_env(rel_path: str, _user: dict = Depends(require_auth)):
     path = resolve_env_path(rel_path)
     if not path.is_file():
@@ -115,7 +119,7 @@ def read_env(rel_path: str, _user: dict = Depends(require_auth)):
     return {"path": rel_path, "content": path.read_text(encoding="utf-8")}
 
 
-@app.put("/api/envs/{rel_path:path}")
+@router.put("/api/envs/{rel_path:path}")
 def write_env(rel_path: str, body: EnvContent, _user: dict = Depends(require_auth)):
     path = resolve_env_path(rel_path)
     if not path.is_file():
@@ -124,3 +128,6 @@ def write_env(rel_path: str, body: EnvContent, _user: dict = Depends(require_aut
     # preserves whatever permission mode it already had (typically 600).
     path.write_text(body.content, encoding="utf-8")
     return {"path": rel_path, "saved": True}
+
+
+app.include_router(router)

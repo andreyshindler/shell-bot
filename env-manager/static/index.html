@@ -77,7 +77,7 @@
   }
 
   function loadList() {
-    api("/api/envs")
+    api("/env/api/envs")
       .then((data) => {
         const list = document.getElementById("files");
         list.innerHTML = "";
@@ -95,7 +95,7 @@
   }
 
   function openFile(relPath) {
-    api("/api/envs/" + encodeURIComponent(relPath).replace(/%2F/g, "/"))
+    api("/env/api/envs/" + encodeURIComponent(relPath).replace(/%2F/g, "/"))
       .then((data) => {
         document.getElementById("files").parentElement.style.display = "none";
         document.getElementById("editor").style.display = "block";
@@ -118,7 +118,7 @@
     const textarea = document.getElementById("content");
     const relPath = textarea.dataset.path;
     document.getElementById("status").textContent = "Saving…";
-    api("/api/envs/" + encodeURIComponent(relPath).replace(/%2F/g, "/"), {
+    api("/env/api/envs/" + encodeURIComponent(relPath).replace(/%2F/g, "/"), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ content: textarea.value }),

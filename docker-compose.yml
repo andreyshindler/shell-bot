@@ -11,7 +11,7 @@ services:
       BOT_TOKEN: ${BOT_TOKEN}
       ALLOWED_USER_ID: ${ALLOWED_USER_ID}
       REPO_DIR: /app
-      ENV_MINIAPP_URL: https://srv1515969.hstgr.cloud/
+      ENV_MINIAPP_URL: https://srv1515969.hstgr.cloud/env
     volumes:
       - /home/komodo/projects:/home/botuser
       - /home/komodo/projects/shell-bot:/app
