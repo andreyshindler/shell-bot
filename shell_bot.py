@@ -206,18 +206,24 @@ def _repo_command(command: str) -> str:
     return f"cd {REPO_DIR} && {command}" if REPO_DIR else command
 
 
-QUICK_COMMANDS = ReplyKeyboardMarkup(
-    [
-        [_repo_command("git pull")],
-        # The container has no docker access (by design — see rebuild-watcher.sh).
-        # This just drops a marker file; a host-side systemd timer running
-        # outside the container does the actual git pull + rebuild.
-        [_repo_command("touch .rebuild-requested")],
-        # -A so dotfiles (.env, .git, …) show up; plain `ls` hides them.
-        ["ls -A"],
-    ],
-    resize_keyboard=True,
-)
+_quick_command_rows = [
+    [_repo_command("git pull")],
+    # The container has no docker access (by design — see rebuild-watcher.sh).
+    # This just drops a marker file; a host-side systemd timer running
+    # outside the container does the actual git pull + rebuild.
+    [_repo_command("touch .rebuild-requested")],
+    # -A so dotfiles (.env, .git, …) show up; plain `ls` hides them.
+    ["ls -A"],
+]
+if ENV_MINIAPP_URL:
+    # A plain-text button reading "/env" — NOT KeyboardButton(web_app=...),
+    # which doesn't reliably populate Telegram.WebApp.initData (confirmed
+    # broken on both mobile and desktop). Tapping this just sends "/env" as
+    # an ordinary message, which triggers env_command()'s inline button —
+    # the launch mechanism that's actually confirmed working.
+    _quick_command_rows.append(["/env"])
+
+QUICK_COMMANDS = ReplyKeyboardMarkup(_quick_command_rows, resize_keyboard=True)
 
 HELP_TEXT = (
     "shell_bot — run shell commands on the VPS.\n\n"
