@@ -15,10 +15,11 @@ import json
 import logging
 import os
 import time
+import urllib.request
 from pathlib import Path
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, urlencode
 
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -34,6 +35,19 @@ if not BOT_TOKEN:
 if not _ALLOWED_USER_ID_RAW:
     raise SystemExit("ALLOWED_USER_ID environment variable is required.")
 ALLOWED_USER_ID = int(_ALLOWED_USER_ID_RAW)
+
+# When on (default), a request that fails Telegram-signature auth alerts the
+# owner over Telegram. This endpoint is public, so alerts are throttled hard
+# (per-IP cooldown + hourly cap) and the owner's own expired-session 403s are
+# suppressed as benign. SECURITY_ALERTS=0 disables.
+SECURITY_ALERTS = os.environ.get("SECURITY_ALERTS", "1").strip().lower() not in (
+    "0",
+    "false",
+    "no",
+    "",
+)
+ALERT_IP_COOLDOWN = 1800  # seconds: min gap between alerts for the same source IP
+ALERT_HOURLY_CAP = 20     # max alerts sent in any wall-clock hour (flood guard)
 
 # Directories never worth surfacing even though they may contain a *.env match.
 _SKIP_DIR_NAMES = {".git", "node_modules", ".venv", "__pycache__"}
@@ -78,11 +92,69 @@ def validate_init_data(init_data: str) -> dict:
     return user
 
 
-def require_auth(x_telegram_init_data: str = Header(default="")) -> dict:
+# --- Unauthorized-access alerting (throttled) ------------------------------ #
+
+_alert_by_ip: dict[str, float] = {}
+_alert_hour_bucket: int | None = None
+_alert_hour_count = 0
+
+
+def _should_alert(ip: str) -> bool:
+    """True at most once per ALERT_IP_COOLDOWN per IP, and never more than
+    ALERT_HOURLY_CAP times per hour overall — so scanners can't flood Telegram."""
+    global _alert_hour_bucket, _alert_hour_count
+    now = time.time()
+    hour = int(now // 3600)
+    if _alert_hour_bucket != hour:
+        _alert_hour_bucket = hour
+        _alert_hour_count = 0
+    if _alert_hour_count >= ALERT_HOURLY_CAP:
+        return False
+    # Bound memory: drop IPs whose cooldown has expired.
+    for stale in [k for k, t in _alert_by_ip.items() if now - t > ALERT_IP_COOLDOWN]:
+        _alert_by_ip.pop(stale, None)
+    if now - _alert_by_ip.get(ip, 0.0) < ALERT_IP_COOLDOWN:
+        return False
+    _alert_by_ip[ip] = now
+    _alert_hour_count += 1
+    return True
+
+
+def _send_telegram(text: str) -> None:
+    """Best-effort owner DM via Telegram's HTTP API. Never raises."""
+    data = urlencode({"chat_id": ALLOWED_USER_ID, "text": text}).encode()
+    try:
+        urllib.request.urlopen(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", data=data, timeout=5
+        )
+    except Exception:  # pragma: no cover - best-effort notification
+        logger.warning("failed to send security alert", exc_info=True)
+
+
+def _client_ip(request: Request) -> str:
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def require_auth(
+    request: Request, x_telegram_init_data: str = Header(default="")
+) -> dict:
     try:
         return validate_init_data(x_telegram_init_data)
     except ValueError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
+        reason = str(exc)
+        # "too old" means the signature was valid (verified before auth_date) but
+        # the session expired — i.e. the owner's own stale tab. Benign, no alert.
+        if SECURITY_ALERTS and "too old" not in reason:
+            ip = _client_ip(request)
+            if _should_alert(ip):
+                _send_telegram(
+                    "⚠️ Unauthorized env-manager request\n"
+                    f"from {ip}\npath: {request.url.path}\nreason: {reason}"
+                )
+        raise HTTPException(status_code=403, detail=reason) from exc
 
 
 def resolve_env_path(rel_path: str) -> Path:
