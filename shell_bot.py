@@ -30,6 +30,7 @@ from pathlib import Path
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    MenuButtonWebApp,
     ReplyKeyboardMarkup,
     Update,
     WebAppInfo,
@@ -229,7 +230,12 @@ HELP_TEXT = (
     "/help — show this help\n"
     "/pwd — print the current working directory\n"
     "/cd <path> — change directory (no arg → home)\n"
-    + ("/env — open the .env file manager (Mini App)\n" if ENV_MINIAPP_URL else "")
+    + (
+        "/env — open the .env file manager (Mini App); also available from "
+        "the ☰ menu button next to the text box\n"
+        if ENV_MINIAPP_URL
+        else ""
+    )
     + "\n"
     "The keyboard below has quick buttons for common commands (git pull, "
     "rebuild, ls).\n\n"
@@ -343,6 +349,18 @@ async def handle_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 # Entrypoint
 # --------------------------------------------------------------------------- #
 
+async def _post_init(application: Application) -> None:
+    """Point the chat's menu button (next to the text input) straight at the
+    .env manager Mini App, one tap away — no /env or keyboard button needed."""
+    if not ENV_MINIAPP_URL:
+        return
+    await application.bot.set_chat_menu_button(
+        menu_button=MenuButtonWebApp(
+            text="Manage .env", web_app=WebAppInfo(url=ENV_MINIAPP_URL)
+        )
+    )
+
+
 def main() -> None:
     if not BOT_TOKEN:
         raise SystemExit("BOT_TOKEN environment variable is required.")
@@ -354,7 +372,7 @@ def main() -> None:
         LOG_PATH,
     )
 
-    application = Application.builder().token(BOT_TOKEN).build()
+    application = Application.builder().token(BOT_TOKEN).post_init(_post_init).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("pwd", pwd))

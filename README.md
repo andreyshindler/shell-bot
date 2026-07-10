@@ -36,7 +36,9 @@ the current working directory. Commands:
 - `/help` — show the command reference
 - `/pwd` — print the current working directory
 - `/cd <path>` — change the working directory for subsequent commands
-- `/env` — open the `.env` file manager (Mini App), if `ENV_MINIAPP_URL` is set
+- `/env` — open the `.env` file manager (Mini App), if `ENV_MINIAPP_URL` is
+  set; also reachable one tap away from the ☰ menu button next to the text
+  box (see below)
 - any other text — run it as a shell command
 
 Behavior:
@@ -137,12 +139,18 @@ Logs land in `rebuild-watcher.log` next to the script. Adjust the hardcoded
 #### env-manager (.env file Mini App)
 
 A Telegram Mini App for viewing/editing any `*.env` file under the projects
-root (`/home/komodo/projects`), opened by sending `/env` (which replies with
-an inline "🔐 Manage .env files" button). Deliberately an inline button, not
-a persistent-keyboard one: `KeyboardButton.web_app` doesn't reliably
-populate `Telegram.WebApp.initData` across clients (confirmed broken on
-both mobile and desktop), while inline `web_app` buttons are Telegram's
-standard, well-tested Mini App launch pattern.
+root (`/home/komodo/projects`). Two ways to open it:
+
+- The **☰ menu button** next to the text box — set once at bot startup via
+  `set_chat_menu_button(MenuButtonWebApp(...))` in `_post_init`, one tap
+  away, no typing needed.
+- `/env`, which replies with an inline "🔐 Manage .env files" button.
+
+Both use Telegram's Mini App launch mechanisms deliberately, not
+`KeyboardButton.web_app` (a button on the persistent reply keyboard):
+that doesn't reliably populate `Telegram.WebApp.initData` across clients
+(confirmed broken on both mobile and desktop), whereas the menu button and
+inline `web_app` buttons are Telegram's standard, well-tested patterns.
 
 - **`env-manager`** — a small FastAPI backend + single-page frontend
   (`env-manager/`), with all its routes (page + API) under a `/env` prefix
