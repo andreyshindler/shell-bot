@@ -97,16 +97,29 @@ Notes:
   deliberately has no `docker` CLI or socket access — see the rebuild watcher
   below.
 
-#### Rebuild watcher
+#### Rebuild watcher (also auto-deploys on push)
 
 The container can't run `docker compose` itself (that would mean mounting the
 host's docker socket into it, which is effectively root on the host — too
-much blast radius for a Telegram bot to hold). Instead, its "rebuild" quick
-button just drops a marker file (`.rebuild-requested`) in the repo dir.
-`rebuild-watcher.sh`, run on the host by a systemd timer (as `komodo`, no
-elevated privileges beyond what that user already has), polls for that
-marker every 15s and does the actual `git pull && docker compose up -d
---build` outside the container.
+much blast radius for a Telegram bot to hold). Instead, `rebuild-watcher.sh`
+runs on the host, outside the container, via a systemd timer (as `komodo`, no
+elevated privileges beyond what that user already has) polling every 15s.
+It deploys (`git pull && docker compose up -d --build`) whenever either:
+
+- the "rebuild" quick-command button dropped a marker file
+  (`.rebuild-requested`) in the repo dir, or
+- `git fetch` shows `origin/main` has commits the checkout doesn't — i.e. a
+  push landed, no button needed.
+
+Either way it reports straight to the bot's chat over Telegram's HTTP API
+directly (not through the bot process, so it still works even when the
+deploy it's reporting on is the one restarting that process): `✅ shell-bot
+deployed: <hash> <subject>` on success, or `❌ shell-bot deploy failed:` plus
+the captured output (git/docker errors) on failure. Uses `BOT_TOKEN`/
+`ALLOWED_USER_ID` already in `.env` — no extra config needed. Note: if
+`git pull` succeeds but the rebuild fails, the checkout is already at the new
+commit, so the auto-detect won't retry on its own; use the rebuild button to
+retry once fixed.
 
 Install it once:
 
