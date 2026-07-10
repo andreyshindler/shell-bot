@@ -25,6 +25,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from telegram import (
@@ -60,6 +61,17 @@ REPO_DIR = os.environ.get("REPO_DIR", "").strip()
 # HTTPS URL of the env-manager Mini App (see env-manager/). Optional: the
 # quick-command keyboard just omits that button if unset.
 ENV_MINIAPP_URL = os.environ.get("ENV_MINIAPP_URL", "").strip()
+
+# When on (default), a non-whitelisted user's attempt to use the bot is not just
+# logged REJECTED but also DM'd to the owner. Throttled per sender so a flooder
+# can't spam. Set SECURITY_ALERTS=0 to disable.
+SECURITY_ALERTS = os.environ.get("SECURITY_ALERTS", "1").strip().lower() not in (
+    "0",
+    "false",
+    "no",
+    "",
+)
+ALERT_COOLDOWN_SECONDS = 300  # per-sender minimum gap between owner alerts
 
 COMMAND_TIMEOUT_SECONDS = 60
 MAX_OUTPUT_CHARS = 3500  # keep the reply under Telegram's 4096-char message cap
@@ -155,6 +167,38 @@ def _describe_sender(update: Update) -> str:
     if user is None:
         return "unknown sender"
     return f"id={user.id} username={user.username!r}"
+
+
+# Per-sender timestamp of the last owner alert, to throttle notifications.
+_last_alert_at: dict[int, float] = {}
+
+
+async def alert_unauthorized(update, context, action: str) -> None:
+    """Best-effort, throttled DM to the owner about a rejected access attempt.
+
+    Never raises — a failure here must not affect request handling.
+    """
+    if not SECURITY_ALERTS or ALLOWED_USER_ID is None:
+        return
+    user = update.effective_user
+    uid = user.id if user is not None else 0
+    now = time.time()
+    if now - _last_alert_at.get(uid, 0.0) < ALERT_COOLDOWN_SECONDS:
+        return
+    _last_alert_at[uid] = now
+
+    message = (
+        "⚠️ Unauthorized attempt on shell_bot\n"
+        f"from {_describe_sender(update)}\n"
+        f"action: {action}"
+    )
+    text = (update.message.text if update.message else "") or ""
+    if text:
+        message += f"\ntext: {text[:200]}"
+    try:
+        await context.bot.send_message(ALLOWED_USER_ID, message)
+    except Exception:  # pragma: no cover - best-effort notification
+        logger.warning("Failed to send unauthorized-attempt alert", exc_info=True)
 
 
 def is_blocked(command: str) -> bool:
@@ -260,6 +304,7 @@ HELP_TEXT = (
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update):
         logger.warning("REJECTED /start from %s", _describe_sender(update))
+        await alert_unauthorized(update, context, "/start")
         return
     await update.message.reply_text(
         "shell_bot ready.\n"
@@ -272,6 +317,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update):
         logger.warning("REJECTED /help from %s", _describe_sender(update))
+        await alert_unauthorized(update, context, "/help")
         return
     await update.message.reply_text(HELP_TEXT, reply_markup=QUICK_COMMANDS)
 
@@ -279,6 +325,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def pwd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update):
         logger.warning("REJECTED /pwd from %s", _describe_sender(update))
+        await alert_unauthorized(update, context, "/pwd")
         return
     await update.message.reply_text(f"cwd: {WORKING_DIR}")
 
@@ -287,6 +334,7 @@ async def cd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     global WORKING_DIR
     if not is_allowed(update):
         logger.warning("REJECTED /cd from %s", _describe_sender(update))
+        await alert_unauthorized(update, context, "/cd")
         return
 
     target = " ".join(context.args).strip() if context.args else ""
@@ -311,6 +359,7 @@ async def cd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def env_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update):
         logger.warning("REJECTED /env from %s", _describe_sender(update))
+        await alert_unauthorized(update, context, "/env")
         return
 
     if not ENV_MINIAPP_URL:
@@ -338,6 +387,7 @@ async def handle_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.warning(
             "REJECTED command from %s: %r", _describe_sender(update), text
         )
+        await alert_unauthorized(update, context, "command")
         return
 
     command = (update.message.text or "").strip()

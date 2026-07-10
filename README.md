@@ -192,3 +192,25 @@ inline `web_app` buttons are Telegram's standard, well-tested patterns.
 
 No BotFather registration is required for this — a `web_app` button in a
 private-chat keyboard just needs a valid HTTPS URL.
+
+#### Security alerts (unauthorized-access notifications)
+
+Both services DM the owner (`ALLOWED_USER_ID`) when someone who isn't you tries
+to get in. On by default; set `SECURITY_ALERTS=0` on either service to disable.
+
+- **shell_bot** — a message from a non-whitelisted Telegram user (already logged
+  `REJECTED`) also triggers an alert with the sender's id/username and what they
+  sent. Throttled to one alert per sender per 5 min.
+- **env-manager** — a request that fails Telegram-signature auth (missing/forged
+  `initData`, or a valid signature for the wrong user) alerts with the source IP
+  (from `X-Forwarded-For`), path, and reason. Your **own** expired-session `403`s
+  are suppressed as benign. Because the endpoint is public, alerts are throttled
+  hard: one per source IP per 30 min, capped at 20/hour overall, so scanners
+  can't flood you. The container needs outbound access to `api.telegram.org`
+  (it has general outbound, like the bot).
+
+**Raw port scans are not covered here** — the app only sees completed
+application requests, not TCP-level probes. Every public VPS is port-scanned
+constantly; the right defense is prevention, not alerts: a firewall
+(`ufw` allowing only 22/443) plus `fail2ban`. Those are host-level, outside
+these containers.
