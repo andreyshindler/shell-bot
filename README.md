@@ -214,3 +214,24 @@ application requests, not TCP-level probes. Every public VPS is port-scanned
 constantly; the right defense is prevention, not alerts: a firewall
 (`ufw` allowing only 22/443) plus `fail2ban`. Those are host-level, outside
 these containers.
+
+#### fail2ban status button (`/bans`)
+
+`/bans` shows the current `fail2ban` SSH jail status (how many brute-forcers are
+banned). `fail2ban` runs on the **host**, not in the container, so the bot can't
+call `fail2ban-client` itself — instead a host cron writes a snapshot into the
+bind-mounted projects dir and `/bans` reads it. Until the cron is installed,
+`/bans` just says "no snapshot yet."
+
+Install the refresher once (writes every 2 min, as root so no `sudo` prompt):
+
+```bash
+echo '*/2 * * * * root /usr/bin/fail2ban-client status sshd > /home/komodo/projects/.fail2ban-status.txt 2>&1' \
+  | sudo tee /etc/cron.d/fail2ban-status
+```
+
+The file lands at `/home/komodo/projects/.fail2ban-status.txt`, which the
+`shell-bot` container sees as `~/.fail2ban-status.txt` (the projects dir is
+bind-mounted to the bot user's home). Adjust the path if your projects dir
+differs. (systemd deployment: point the cron at wherever `shell_bot.py`'s home
+is instead.)
