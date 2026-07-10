@@ -12,6 +12,7 @@ validate_init_data().
 import hashlib
 import hmac
 import json
+import logging
 import os
 import time
 from pathlib import Path
@@ -20,6 +21,8 @@ from urllib.parse import parse_qsl
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+
+logger = logging.getLogger("env-manager")
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 _ALLOWED_USER_ID_RAW = os.environ.get("ALLOWED_USER_ID", "").strip()
@@ -48,7 +51,7 @@ def validate_init_data(init_data: str) -> dict:
     if not init_data:
         raise ValueError("missing initData")
 
-    parsed = dict(parse_qsl(init_data, strict_parsing=True))
+    parsed = dict(parse_qsl(init_data, strict_parsing=True, keep_blank_values=True))
     received_hash = parsed.pop("hash", None)
     if not received_hash:
         raise ValueError("initData missing hash")
@@ -61,7 +64,10 @@ def validate_init_data(init_data: str) -> dict:
     if not hmac.compare_digest(computed_hash, received_hash):
         raise ValueError("initData signature mismatch")
 
-    auth_date = int(parsed.get("auth_date", "0"))
+    try:
+        auth_date = int(parsed.get("auth_date", "0"))
+    except ValueError as exc:
+        raise ValueError("initData has non-numeric auth_date") from exc
     if time.time() - auth_date > INIT_DATA_MAX_AGE_SECONDS:
         raise ValueError("initData too old")
 
@@ -94,6 +100,13 @@ def resolve_env_path(rel_path: str) -> Path:
 
 class EnvContent(BaseModel):
     content: str
+
+
+@router.get("/health")
+def health():
+    """Unauthenticated liveness probe — no secrets, no file access. Used by the
+    container healthcheck (see docker-compose.yml)."""
+    return {"ok": True}
 
 
 @router.get("")
@@ -131,3 +144,12 @@ def write_env(rel_path: str, body: EnvContent, _user: dict = Depends(require_aut
 
 
 app.include_router(router)
+
+
+@app.on_event("startup")
+def _log_startup() -> None:
+    logger.info(
+        "env-manager started: PROJECTS_ROOT=%s, allowed user=%s",
+        PROJECTS_ROOT,
+        ALLOWED_USER_ID,
+    )

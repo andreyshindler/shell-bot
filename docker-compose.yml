@@ -36,3 +36,12 @@ services:
       # here. Ports 80/443 are already held by that nginx, so this
       # container can't (and shouldn't) terminate TLS itself.
       - "127.0.0.1:8091:8080"
+    healthcheck:
+      # Uses the image's Python (no curl needed); urlopen exits non-zero on a
+      # non-200, marking the container unhealthy. /env/health is unauthenticated
+      # and returns no secrets.
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/env/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
