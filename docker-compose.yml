@@ -11,15 +11,6 @@ services:
       BOT_TOKEN: ${BOT_TOKEN}
       ALLOWED_USER_ID: ${ALLOWED_USER_ID}
       REPO_DIR: /app
-      # .env Mini App (optional). Inside the container bind to 0.0.0.0 so the
-      # published port below can reach it; leave WEBAPP_URL blank to disable.
-      WEBAPP_URL: ${WEBAPP_URL:-}
-      WEBAPP_BIND: 0.0.0.0:8081
-    # Publish the Mini App port to the host loopback only — host nginx proxies
-    # HTTPS to it. Never expose 8081 to 0.0.0.0 on the host. Harmless if the
-    # Mini App is disabled (nothing listens).
-    ports:
-      - "127.0.0.1:8081:8081"
     volumes:
       - /home/komodo/projects:/home/botuser
       - /home/komodo/projects/shell-bot:/app

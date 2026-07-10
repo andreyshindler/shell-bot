@@ -36,7 +36,6 @@ the current working directory. Commands:
 - `/help` — show the command reference
 - `/pwd` — print the current working directory
 - `/cd <path>` — change the working directory for subsequent commands
-- `/env` — view/edit the `.env` in the current directory (Telegram Mini App)
 - any other text — run it as a shell command
 
 Behavior:
@@ -48,37 +47,6 @@ Behavior:
 - Every command run (and every rejected/blocked attempt) is written to
   `shell_bot.log` next to the script. The log rotates in place (5 × 2 MiB
   files), so it never grows unbounded — no external logrotate needed.
-
-## `.env` editor (Mini App)
-
-`/env` opens a Telegram **Mini App** to view and edit the `.env` in the bot's
-current working directory — handy right after cloning a project or `/cd`-ing
-into one (interactive editors like `nano` can't run over the bot; there's no
-TTY). It **only** touches the literal `.env` in the current directory and
-**refuses if that file doesn't exist** (it never creates one).
-
-This is optional and **off by default**. Enable it by setting `WEBAPP_URL` to an
-HTTPS URL that fronts the bot (Telegram requires HTTPS for Mini Apps):
-
-```
-WEBAPP_URL=https://shellbot.example.com   # HTTPS root nginx proxies to the bot
-WEBAPP_BIND=127.0.0.1:8081                # where the bot's app server listens
-```
-
-How it stays safe as an inbound surface:
-
-- The bot serves the Mini App + a tiny JSON API from an aiohttp server bound to
-  **loopback** (`WEBAPP_BIND`); nginx is the only public entry, over HTTPS.
-- Every API request must carry a valid Telegram `initData`, verified by HMAC
-  against `BOT_TOKEN` (constant-time), with a freshness check, and the embedded
-  user id must equal `ALLOWED_USER_ID`. Anything else → `401`.
-- The client never sends a filesystem path — the server always uses
-  `<current dir>/.env`, so the endpoint can only ever read/write a `.env` in the
-  directory the bot is currently pointed at.
-- Reads and writes are logged (`ENV VIEW` / `ENV WRITE`) to the audit log, and a
-  confirmation message is sent after each save.
-
-See [DEPLOY.md](DEPLOY.md) for the nginx block and end-to-end test steps.
 
 ## Deployment
 
@@ -124,11 +92,6 @@ Notes:
   --restart unless-stopped -e BOT_TOKEN -e ALLOWED_USER_ID -v
   /home/komodo/projects:/home/botuser -v
   /home/komodo/projects/shell-bot:/app shell-bot`.
-- **`.env` Mini App under Docker:** set `WEBAPP_URL` in `.env` to enable it. The
-  compose file already binds the in-container server to `0.0.0.0:8081` and
-  publishes it to the host as `127.0.0.1:8081` (loopback only), so the host's
-  nginx can reverse-proxy HTTPS to it — see the nginx block in
-  [DEPLOY.md](DEPLOY.md). Left blank, the feature stays off.
 - The chat keyboard has quick buttons for `git pull`, a rebuild request, and
   `ls`. The container deliberately has no `docker` CLI or socket access — see
   the rebuild watcher below.
