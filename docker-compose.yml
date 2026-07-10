@@ -30,19 +30,9 @@ services:
       PROJECTS_ROOT: /projects
     volumes:
       - /home/komodo/projects:/projects
-
-  caddy:
-    image: caddy:2-alpine
-    container_name: caddy
-    restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
-
-volumes:
-  caddy-data:
-  caddy-config:
+      # Loopback only — the host's existing nginx (shared with other
+      # projects, see README) reverse-proxies srv1515969.hstgr.cloud/env
+      # here. Ports 80/443 are already held by that nginx, so this
+      # container can't (and shouldn't) terminate TLS itself.
+      - "127.0.0.1:8091:8080"
