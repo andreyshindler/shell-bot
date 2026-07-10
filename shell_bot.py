@@ -206,14 +206,17 @@ def _repo_command(command: str) -> str:
     return f"cd {REPO_DIR} && {command}" if REPO_DIR else command
 
 
-_quick_command_rows = [
-    [_repo_command("git pull")],
+_quick_command_buttons = [
+    _repo_command("git pull"),
     # The container has no docker access (by design — see rebuild-watcher.sh).
     # This just drops a marker file; a host-side systemd timer running
     # outside the container does the actual git pull + rebuild.
-    [_repo_command("touch .rebuild-requested")],
+    _repo_command("touch .rebuild-requested"),
     # -A so dotfiles (.env, .git, …) show up; plain `ls` hides them.
-    ["ls -A"],
+    "ls -A",
+    "/pwd",
+    "/cd",  # no arg -> defaults to home, per the cd() handler below
+    "/start",
 ]
 if ENV_MINIAPP_URL:
     # A plain-text button reading "/env" — NOT KeyboardButton(web_app=...),
@@ -221,7 +224,12 @@ if ENV_MINIAPP_URL:
     # broken on both mobile and desktop). Tapping this just sends "/env" as
     # an ordinary message, which triggers env_command()'s inline button —
     # the launch mechanism that's actually confirmed working.
-    _quick_command_rows.append(["/env"])
+    _quick_command_buttons.append("/env")
+
+# Two buttons per row (last row gets the odd one out if the count is odd).
+_quick_command_rows = [
+    _quick_command_buttons[i : i + 2] for i in range(0, len(_quick_command_buttons), 2)
+]
 
 QUICK_COMMANDS = ReplyKeyboardMarkup(_quick_command_rows, resize_keyboard=True)
 
@@ -244,7 +252,7 @@ HELP_TEXT = (
     )
     + "\n"
     "The keyboard below has quick buttons for common commands (git pull, "
-    "rebuild, ls).\n\n"
+    "rebuild, ls, pwd, cd, start" + (", env" if ENV_MINIAPP_URL else "") + ").\n\n"
     "Catastrophic commands (rm -rf /, fork bombs, mkfs, dd if=, …) are refused."
 )
 

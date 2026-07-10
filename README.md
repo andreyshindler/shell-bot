@@ -95,9 +95,10 @@ Notes:
   --restart unless-stopped -e BOT_TOKEN -e ALLOWED_USER_ID -v
   /home/komodo/projects:/home/botuser -v
   /home/komodo/projects/shell-bot:/app shell-bot`.
-- The chat keyboard has quick buttons for `git pull`, a rebuild request, `ls`,
-  and (if `ENV_MINIAPP_URL` is set) a `.env` file manager. The container
-  deliberately has no `docker` CLI or socket access — see the rebuild watcher
+- The chat keyboard has quick buttons for `git pull`, a rebuild request,
+  `ls`, `/pwd`, `/cd` (resets to home), `/start`, and (if `ENV_MINIAPP_URL`
+  is set) `/env`, arranged two per row. The container deliberately has no
+  `docker` CLI or socket access — see the rebuild watcher
   below.
 
 #### Rebuild watcher (also auto-deploys on push)
