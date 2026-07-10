@@ -92,9 +92,10 @@ Notes:
   --restart unless-stopped -e BOT_TOKEN -e ALLOWED_USER_ID -v
   /home/komodo/projects:/home/botuser -v
   /home/komodo/projects/shell-bot:/app shell-bot`.
-- The chat keyboard has quick buttons for `git pull`, a rebuild request, and
-  `ls`. The container deliberately has no `docker` CLI or socket access — see
-  the rebuild watcher below.
+- The chat keyboard has quick buttons for `git pull`, a rebuild request, `ls`,
+  and (if `ENV_MINIAPP_URL` is set) a `.env` file manager. The container
+  deliberately has no `docker` CLI or socket access — see the rebuild watcher
+  below.
 
 #### Rebuild watcher
 
@@ -118,3 +119,29 @@ sudo systemctl enable --now rebuild-watcher.timer
 Logs land in `rebuild-watcher.log` next to the script. Adjust the hardcoded
 `/home/komodo/projects/shell-bot` path in `rebuild-watcher.service` and the
 `User=` if your checkout lives elsewhere or runs as a different user.
+
+#### env-manager (.env file Mini App)
+
+A Telegram Mini App for viewing/editing any `*.env` file under the projects
+root (`/home/komodo/projects`), opened via the "🔐 Manage .env files" button
+in shell_bot's keyboard. Three pieces, all in `docker-compose.yml`:
+
+- **`env-manager`** — a small FastAPI backend + single-page frontend
+  (`env-manager/`). Every request must carry a Telegram-signed `initData`
+  proving it's `ALLOWED_USER_ID` (validated via HMAC against `BOT_TOKEN`,
+  same algorithm Telegram documents for Mini Apps); file paths are resolved
+  and confirmed to stay inside the projects root and end in `.env` before
+  any read/write. This is the only thing standing between the public
+  internet and every project's secrets, so don't weaken it.
+- **`caddy`** — reverse-proxies `https://srv1515969.hstgr.cloud` (or
+  whatever hostname you set in `Caddyfile` and `ENV_MINIAPP_URL`) to
+  `env-manager`, auto-provisioning a Let's Encrypt certificate. Needs ports
+  80 and 443 free on the host — check `sudo ss -tlnp | grep -E ':80|:443'`
+  first; if something else (e.g. a control panel) already holds them, this
+  won't be able to get a certificate.
+- **`ENV_MINIAPP_URL`** (set on the `shell-bot` service) — the HTTPS URL
+  shell_bot puts on the Mini App button. Must match the hostname in
+  `Caddyfile`.
+
+No BotFather registration is required for this — a `web_app` button in a
+private-chat keyboard just needs a valid HTTPS URL.

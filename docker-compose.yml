@@ -11,6 +11,38 @@ services:
       BOT_TOKEN: ${BOT_TOKEN}
       ALLOWED_USER_ID: ${ALLOWED_USER_ID}
       REPO_DIR: /app
+      ENV_MINIAPP_URL: https://srv1515969.hstgr.cloud/
     volumes:
       - /home/komodo/projects:/home/botuser
       - /home/komodo/projects/shell-bot:/app
+
+  env-manager:
+    build:
+      context: ./env-manager
+      args:
+        UID: ${HOST_UID:-1000}
+        GID: ${HOST_GID:-1000}
+    container_name: env-manager
+    restart: unless-stopped
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN}
+      ALLOWED_USER_ID: ${ALLOWED_USER_ID}
+      PROJECTS_ROOT: /projects
+    volumes:
+      - /home/komodo/projects:/projects
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  caddy-data:
+  caddy-config:

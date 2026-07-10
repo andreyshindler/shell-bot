@@ -1,0 +1,3 @@
+srv1515969.hstgr.cloud {
+    reverse_proxy env-manager:8080
+}

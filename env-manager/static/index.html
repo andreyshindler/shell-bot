@@ -1,0 +1,136 @@
+<title>env-manager</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    margin: 0;
+    padding: 12px;
+    background: var(--tg-theme-bg-color, #fff);
+    color: var(--tg-theme-text-color, #000);
+  }
+  h1 { font-size: 1.1em; }
+  #files { list-style: none; padding: 0; }
+  #files li {
+    padding: 10px;
+    margin-bottom: 6px;
+    border-radius: 8px;
+    background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+    cursor: pointer;
+    font-family: monospace;
+  }
+  #editor { display: none; }
+  #editor textarea {
+    width: 100%;
+    box-sizing: border-box;
+    height: 50vh;
+    font-family: monospace;
+    font-size: 14px;
+  }
+  button {
+    background: var(--tg-theme-button-color, #2481cc);
+    color: var(--tg-theme-button-text-color, #fff);
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 1em;
+    margin-top: 8px;
+  }
+  #status { margin-top: 8px; font-size: 0.9em; }
+  #error { color: #d33; white-space: pre-wrap; }
+</style>
+
+<h1>.env files</h1>
+<div id="error"></div>
+<ul id="files"></ul>
+
+<div id="editor">
+  <button id="back">&larr; Back</button>
+  <p id="editing-path" style="font-family: monospace;"></p>
+  <textarea id="content" spellcheck="false"></textarea>
+  <br>
+  <button id="save">Save</button>
+  <span id="status"></span>
+</div>
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+  const tg = window.Telegram.WebApp;
+  tg.ready();
+  tg.expand();
+
+  const initData = tg.initData || "";
+
+  function api(path, options) {
+    options = options || {};
+    options.headers = Object.assign({}, options.headers, {
+      "X-Telegram-Init-Data": initData,
+    });
+    return fetch(path, options).then(async (res) => {
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.detail || res.statusText);
+      return body;
+    });
+  }
+
+  function showError(message) {
+    document.getElementById("error").textContent = message ? "Error: " + message : "";
+  }
+
+  function loadList() {
+    api("/api/envs")
+      .then((data) => {
+        const list = document.getElementById("files");
+        list.innerHTML = "";
+        data.envs.forEach((relPath) => {
+          const li = document.createElement("li");
+          li.textContent = relPath;
+          li.onclick = () => openFile(relPath);
+          list.appendChild(li);
+        });
+        if (data.envs.length === 0) {
+          list.innerHTML = "<li style='cursor:default'>No .env files found.</li>";
+        }
+      })
+      .catch((err) => showError(err.message));
+  }
+
+  function openFile(relPath) {
+    api("/api/envs/" + encodeURIComponent(relPath).replace(/%2F/g, "/"))
+      .then((data) => {
+        document.getElementById("files").parentElement.style.display = "none";
+        document.getElementById("editor").style.display = "block";
+        document.getElementById("editing-path").textContent = data.path;
+        document.getElementById("content").value = data.content;
+        document.getElementById("content").dataset.path = data.path;
+        document.getElementById("status").textContent = "";
+      })
+      .catch((err) => showError(err.message));
+  }
+
+  document.getElementById("back").onclick = () => {
+    document.getElementById("editor").style.display = "none";
+    document.querySelector("h1").style.display = "block";
+    document.getElementById("files").style.display = "block";
+    showError("");
+  };
+
+  document.getElementById("save").onclick = () => {
+    const textarea = document.getElementById("content");
+    const relPath = textarea.dataset.path;
+    document.getElementById("status").textContent = "Saving…";
+    api("/api/envs/" + encodeURIComponent(relPath).replace(/%2F/g, "/"), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: textarea.value }),
+    })
+      .then(() => {
+        document.getElementById("status").textContent = "Saved.";
+      })
+      .catch((err) => {
+        showError(err.message);
+        document.getElementById("status").textContent = "";
+      });
+  };
+
+  loadList();
+</script>

@@ -27,7 +27,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from telegram import ReplyKeyboardMarkup, Update
+from telegram import KeyboardButton, ReplyKeyboardMarkup, Update, WebAppInfo
 from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
@@ -49,6 +49,10 @@ _ALLOWED_USER_ID_RAW = os.environ.get("ALLOWED_USER_ID", "").strip()
 # necessarily WORKING_DIR's default (home). Optional: buttons run from
 # whatever the current working directory is if unset.
 REPO_DIR = os.environ.get("REPO_DIR", "").strip()
+
+# HTTPS URL of the env-manager Mini App (see env-manager/). Optional: the
+# quick-command keyboard just omits that button if unset.
+ENV_MINIAPP_URL = os.environ.get("ENV_MINIAPP_URL", "").strip()
 
 COMMAND_TIMEOUT_SECONDS = 60
 MAX_OUTPUT_CHARS = 3500  # keep the reply under Telegram's 4096-char message cap
@@ -195,18 +199,21 @@ def _repo_command(command: str) -> str:
     return f"cd {REPO_DIR} && {command}" if REPO_DIR else command
 
 
-QUICK_COMMANDS = ReplyKeyboardMarkup(
-    [
-        [_repo_command("git pull")],
-        # The container has no docker access (by design — see rebuild-watcher.sh).
-        # This just drops a marker file; a host-side systemd timer running
-        # outside the container does the actual git pull + rebuild.
-        [_repo_command("touch .rebuild-requested")],
-        # -A so dotfiles (.env, .git, …) show up; plain `ls` hides them.
-        ["ls -A"],
-    ],
-    resize_keyboard=True,
-)
+_quick_command_rows = [
+    [_repo_command("git pull")],
+    # The container has no docker access (by design — see rebuild-watcher.sh).
+    # This just drops a marker file; a host-side systemd timer running
+    # outside the container does the actual git pull + rebuild.
+    [_repo_command("touch .rebuild-requested")],
+    # -A so dotfiles (.env, .git, …) show up; plain `ls` hides them.
+    ["ls -A"],
+]
+if ENV_MINIAPP_URL:
+    _quick_command_rows.append(
+        [KeyboardButton("🔐 Manage .env files", web_app=WebAppInfo(url=ENV_MINIAPP_URL))]
+    )
+
+QUICK_COMMANDS = ReplyKeyboardMarkup(_quick_command_rows, resize_keyboard=True)
 
 HELP_TEXT = (
     "shell_bot — run shell commands on the VPS.\n\n"
@@ -220,7 +227,7 @@ HELP_TEXT = (
     "/pwd — print the current working directory\n"
     "/cd <path> — change directory (no arg → home)\n\n"
     "The keyboard below has quick buttons for common commands (git pull, "
-    "rebuild, ls).\n\n"
+    "rebuild, ls)" + (", plus a .env file manager" if ENV_MINIAPP_URL else "") + ".\n\n"
     "Catastrophic commands (rm -rf /, fork bombs, mkfs, dd if=, …) are refused."
 )
 
