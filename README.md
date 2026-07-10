@@ -36,6 +36,7 @@ the current working directory. Commands:
 - `/help` — show the command reference
 - `/pwd` — print the current working directory
 - `/cd <path>` — change the working directory for subsequent commands
+- `/env` — open the `.env` file manager (Mini App), if `ENV_MINIAPP_URL` is set
 - any other text — run it as a shell command
 
 Behavior:
@@ -136,8 +137,12 @@ Logs land in `rebuild-watcher.log` next to the script. Adjust the hardcoded
 #### env-manager (.env file Mini App)
 
 A Telegram Mini App for viewing/editing any `*.env` file under the projects
-root (`/home/komodo/projects`), opened via the "🔐 Manage .env files" button
-in shell_bot's keyboard.
+root (`/home/komodo/projects`), opened by sending `/env` (which replies with
+an inline "🔐 Manage .env files" button). Deliberately an inline button, not
+a persistent-keyboard one: `KeyboardButton.web_app` doesn't reliably
+populate `Telegram.WebApp.initData` across clients (confirmed broken on
+both mobile and desktop), while inline `web_app` buttons are Telegram's
+standard, well-tested Mini App launch pattern.
 
 - **`env-manager`** — a small FastAPI backend + single-page frontend
   (`env-manager/`), with all its routes (page + API) under a `/env` prefix

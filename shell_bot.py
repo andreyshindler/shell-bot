@@ -27,7 +27,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-from telegram import KeyboardButton, ReplyKeyboardMarkup, Update, WebAppInfo
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+    Update,
+    WebAppInfo,
+)
 from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
@@ -199,21 +205,18 @@ def _repo_command(command: str) -> str:
     return f"cd {REPO_DIR} && {command}" if REPO_DIR else command
 
 
-_quick_command_rows = [
-    [_repo_command("git pull")],
-    # The container has no docker access (by design — see rebuild-watcher.sh).
-    # This just drops a marker file; a host-side systemd timer running
-    # outside the container does the actual git pull + rebuild.
-    [_repo_command("touch .rebuild-requested")],
-    # -A so dotfiles (.env, .git, …) show up; plain `ls` hides them.
-    ["ls -A"],
-]
-if ENV_MINIAPP_URL:
-    _quick_command_rows.append(
-        [KeyboardButton("🔐 Manage .env files", web_app=WebAppInfo(url=ENV_MINIAPP_URL))]
-    )
-
-QUICK_COMMANDS = ReplyKeyboardMarkup(_quick_command_rows, resize_keyboard=True)
+QUICK_COMMANDS = ReplyKeyboardMarkup(
+    [
+        [_repo_command("git pull")],
+        # The container has no docker access (by design — see rebuild-watcher.sh).
+        # This just drops a marker file; a host-side systemd timer running
+        # outside the container does the actual git pull + rebuild.
+        [_repo_command("touch .rebuild-requested")],
+        # -A so dotfiles (.env, .git, …) show up; plain `ls` hides them.
+        ["ls -A"],
+    ],
+    resize_keyboard=True,
+)
 
 HELP_TEXT = (
     "shell_bot — run shell commands on the VPS.\n\n"
@@ -225,9 +228,11 @@ HELP_TEXT = (
     "/start — show status and current directory\n"
     "/help — show this help\n"
     "/pwd — print the current working directory\n"
-    "/cd <path> — change directory (no arg → home)\n\n"
+    "/cd <path> — change directory (no arg → home)\n"
+    + ("/env — open the .env file manager (Mini App)\n" if ENV_MINIAPP_URL else "")
+    + "\n"
     "The keyboard below has quick buttons for common commands (git pull, "
-    "rebuild, ls)" + (", plus a .env file manager" if ENV_MINIAPP_URL else "") + ".\n\n"
+    "rebuild, ls).\n\n"
     "Catastrophic commands (rm -rf /, fork bombs, mkfs, dd if=, …) are refused."
 )
 
@@ -283,6 +288,30 @@ async def cd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(f"cwd: {WORKING_DIR}")
 
 
+async def env_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_allowed(update):
+        logger.warning("REJECTED /env from %s", _describe_sender(update))
+        return
+
+    if not ENV_MINIAPP_URL:
+        await update.message.reply_text(
+            "The .env file manager isn't configured on this bot "
+            "(ENV_MINIAPP_URL is unset)."
+        )
+        return
+
+    # An inline button, not a persistent-keyboard one: KeyboardButton.web_app
+    # doesn't reliably populate Telegram.WebApp.initData across all clients
+    # (confirmed broken on both mobile and desktop), while inline web_app
+    # buttons are Telegram's standard, well-tested Mini App launch pattern.
+    button = InlineKeyboardButton(
+        "🔐 Manage .env files", web_app=WebAppInfo(url=ENV_MINIAPP_URL)
+    )
+    await update.message.reply_text(
+        "Open the .env file manager:", reply_markup=InlineKeyboardMarkup([[button]])
+    )
+
+
 async def handle_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update):
         text = update.message.text if update.message else ""
@@ -330,6 +359,7 @@ def main() -> None:
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("pwd", pwd))
     application.add_handler(CommandHandler("cd", cd))
+    application.add_handler(CommandHandler("env", env_command))
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_command)
     )
