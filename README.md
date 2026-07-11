@@ -235,3 +235,23 @@ The file lands at `/home/komodo/projects/.fail2ban-status.txt`, which the
 bind-mounted to the bot user's home). Adjust the path if your projects dir
 differs. (systemd deployment: point the cron at wherever `shell_bot.py`'s home
 is instead.)
+
+#### firewall status button (`/ufw`)
+
+`/ufw` shows the `ufw` state plus a summary of recently blocked connections (how
+many, top source IPs, top destination ports). Same host↔container split as
+`/bans`: `ufw` runs on the host, so the repo ships `ufw-status.sh` which a root
+cron runs to write the snapshot; `/ufw` reads it.
+
+Install it once:
+
+```bash
+sudo chmod +x /home/komodo/projects/shell-bot/ufw-status.sh
+echo '*/2 * * * * root /home/komodo/projects/shell-bot/ufw-status.sh' \
+  | sudo tee /etc/cron.d/ufw-status
+```
+
+The script writes `/home/komodo/projects/.ufw-status.txt` (→ `~/.ufw-status.txt`
+in the container). It reads blocked-packet lines from `/var/log/ufw.log`, or
+falls back to the kernel journal (`journalctl -k`) if that log isn't present.
+Adjust the hardcoded `OUT` path in the script if your projects dir differs.
