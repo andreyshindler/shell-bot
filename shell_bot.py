@@ -261,6 +261,7 @@ _quick_command_buttons = [
     "/pwd",
     "/cd",  # no arg -> defaults to home, per the cd() handler below
     "/bans",  # fail2ban sshd status (reads a host-written snapshot)
+    "/ufw",   # ufw firewall status + recent blocks (host-written snapshot)
     "/start",
 ]
 if ENV_MINIAPP_URL:
@@ -290,6 +291,7 @@ HELP_TEXT = (
     "/pwd — print the current working directory\n"
     "/cd <path> — change directory (no arg → home)\n"
     "/bans — fail2ban sshd status (banned SSH brute-forcers)\n"
+    "/ufw — firewall status + recently blocked connections\n"
     + (
         "/env — open the .env file manager (Mini App); also available from "
         "the ☰ menu button next to the text box\n"
@@ -332,11 +334,31 @@ async def pwd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(f"cwd: {WORKING_DIR}")
 
 
-# fail2ban runs on the host, not in this container, so the bot can't call
-# fail2ban-client directly. A host-side cron writes `fail2ban-client status
-# sshd` to this file in the bind-mounted projects dir (see README); /bans just
-# reads that snapshot.
+# fail2ban / ufw run on the host, not in this container, so the bot can't call
+# their CLIs directly. Host-side crons write their status to these files in the
+# bind-mounted projects dir (see README); /bans and /ufw just read the snapshot.
 BANS_SNAPSHOT = Path.home() / ".fail2ban-status.txt"
+UFW_SNAPSHOT = Path.home() / ".ufw-status.txt"
+
+
+async def _reply_snapshot(update, snapshot: Path, label: str) -> None:
+    """Send the contents of a host-written status file, with a freshness header,
+    or a hint to install the refresher if it doesn't exist yet."""
+    if not snapshot.is_file():
+        await update.message.reply_text(
+            f"No {label} snapshot yet. Install the host cron that writes "
+            f"{snapshot.name} into the projects dir (see README)."
+        )
+        return
+    try:
+        content = snapshot.read_text(encoding="utf-8").strip() or "(empty)"
+        age = int(time.time() - snapshot.stat().st_mtime)
+        header = f"{label} — snapshot {age}s old\n"
+    except OSError as exc:
+        content, header = f"(failed to read snapshot: {exc})", ""
+    await update.message.reply_text(
+        format_reply(header + content), parse_mode=ParseMode.MARKDOWN
+    )
 
 
 async def bans(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -344,22 +366,15 @@ async def bans(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.warning("REJECTED /bans from %s", _describe_sender(update))
         await alert_unauthorized(update, context, "/bans")
         return
-    if not BANS_SNAPSHOT.is_file():
-        await update.message.reply_text(
-            "No fail2ban snapshot yet. Install the host cron that writes "
-            f"{BANS_SNAPSHOT.name} into the projects dir (see README → "
-            "“fail2ban status button”)."
-        )
+    await _reply_snapshot(update, BANS_SNAPSHOT, "fail2ban sshd")
+
+
+async def ufw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_allowed(update):
+        logger.warning("REJECTED /ufw from %s", _describe_sender(update))
+        await alert_unauthorized(update, context, "/ufw")
         return
-    try:
-        content = BANS_SNAPSHOT.read_text(encoding="utf-8").strip() or "(empty)"
-        age = int(time.time() - BANS_SNAPSHOT.stat().st_mtime)
-        header = f"fail2ban sshd — snapshot {age}s old\n"
-    except OSError as exc:
-        content, header = f"(failed to read snapshot: {exc})", ""
-    await update.message.reply_text(
-        format_reply(header + content), parse_mode=ParseMode.MARKDOWN
-    )
+    await _reply_snapshot(update, UFW_SNAPSHOT, "ufw firewall")
 
 
 async def cd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -473,6 +488,7 @@ def main() -> None:
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("pwd", pwd))
     application.add_handler(CommandHandler("bans", bans))
+    application.add_handler(CommandHandler("ufw", ufw))
     application.add_handler(CommandHandler("cd", cd))
     application.add_handler(CommandHandler("env", env_command))
     application.add_handler(
