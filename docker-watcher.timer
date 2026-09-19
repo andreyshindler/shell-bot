@@ -1,0 +1,11 @@
+[Unit]
+Description=Poll for shell-bot docker status + start/stop/restart requests
+
+[Timer]
+# Faster than the rebuild watcher — /docker's buttons want a snappy response.
+OnBootSec=10s
+OnUnitActiveSec=5s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

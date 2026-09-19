@@ -39,6 +39,7 @@ from telegram import (
 from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
@@ -262,6 +263,7 @@ _quick_command_buttons = [
     "/cd",  # no arg -> defaults to home, per the cd() handler below
     "/bans",  # fail2ban sshd status (reads a host-written snapshot)
     "/ufw",   # ufw firewall status + recent blocks (host-written snapshot)
+    "/docker",  # list containers by project + start/stop/restart buttons
     "/start",
 ]
 if ENV_MINIAPP_URL:
@@ -292,6 +294,7 @@ HELP_TEXT = (
     "/cd <path> — change directory (no arg → home)\n"
     "/bans — fail2ban sshd status (banned SSH brute-forcers)\n"
     "/ufw — firewall status + recently blocked connections\n"
+    "/docker — list containers by project; start/stop/restart buttons\n"
     + (
         "/env — open the .env file manager (Mini App); also available from "
         "the ☰ menu button next to the text box\n"
@@ -375,6 +378,107 @@ async def ufw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await alert_unauthorized(update, context, "/ufw")
         return
     await _reply_snapshot(update, UFW_SNAPSHOT, "ufw firewall")
+
+
+# The container has no docker access (by design — see rebuild-watcher.sh). A
+# host-side docker-watcher writes the container list here and executes the
+# start/stop/restart requests that /docker's inline buttons queue to
+# DOCKER_REQUEST. The bot only ever *reads* the list and *requests* a bounded
+# action; it never runs docker itself.
+DOCKER_SNAPSHOT = Path.home() / ".docker-status.txt"
+DOCKER_REQUEST = Path.home() / ".docker-request"
+DOCKER_VERBS = ("start", "stop", "restart")
+
+
+def _read_docker_containers():
+    """Parse the host-written snapshot into (rows, age_seconds), where rows is a
+    list of (project, name, state). Returns (None, None) if it doesn't exist."""
+    if not DOCKER_SNAPSHOT.is_file():
+        return None, None
+    age = int(time.time() - DOCKER_SNAPSHOT.stat().st_mtime)
+    rows = []
+    for line in DOCKER_SNAPSHOT.read_text(encoding="utf-8").splitlines():
+        parts = line.split("|")
+        if len(parts) >= 3 and parts[1]:
+            rows.append((parts[0] or "(no project)", parts[1], parts[2]))
+    rows.sort(key=lambda r: (r[0], r[1]))
+    return rows, age
+
+
+async def docker_ps(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_allowed(update):
+        logger.warning("REJECTED /docker from %s", _describe_sender(update))
+        await alert_unauthorized(update, context, "/docker")
+        return
+    rows, age = _read_docker_containers()
+    if rows is None:
+        await update.message.reply_text(
+            "No docker snapshot yet. Install the host docker-watcher "
+            "(see README → “docker controls”)."
+        )
+        return
+    if not rows:
+        await update.message.reply_text("No containers found.")
+        return
+
+    lines = [f"🐳 containers — snapshot {age}s old"]
+    keyboard = []
+    current_project = None
+    for project, name, state in rows:
+        if project != current_project:
+            lines.append(f"\n📁 `{project}`")
+            current_project = project
+        running = state == "running"
+        lines.append(f"{'🟢' if running else '⚪'} `{name}` — {state}")
+        if running:
+            row = [
+                InlineKeyboardButton(f"⏹ {name}", callback_data=f"dk:stop:{name}"),
+                InlineKeyboardButton("⟳", callback_data=f"dk:restart:{name}"),
+            ]
+        else:
+            row = [InlineKeyboardButton(f"▶ {name}", callback_data=f"dk:start:{name}")]
+        # callback_data is capped at 64 bytes; skip the (very rare) over-long name.
+        if all(len(b.callback_data.encode()) <= 64 for b in row):
+            keyboard.append(row)
+    await update.message.reply_text(
+        "\n".join(lines),
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+async def docker_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if not is_allowed(update):
+        logger.warning("REJECTED docker action from %s", _describe_sender(update))
+        await alert_unauthorized(update, context, "docker button")
+        if query is not None:
+            await query.answer("Not authorized", show_alert=True)
+        return
+    data = query.data or ""
+    try:
+        _, verb, name = data.split(":", 2)
+    except ValueError:
+        await query.answer("Bad request")
+        return
+    if verb not in DOCKER_VERBS:
+        await query.answer("Unknown action")
+        return
+    # Only queue actions for containers we actually listed (defense in depth —
+    # the host docker-watcher re-validates the name and verb before running it).
+    rows, _ = _read_docker_containers()
+    known = {name for _, name, _ in rows} if rows else set()
+    if name not in known:
+        await query.answer("Unknown container — refresh /docker", show_alert=True)
+        return
+    try:
+        with DOCKER_REQUEST.open("a", encoding="utf-8") as fh:
+            fh.write(f"{verb} {name}\n")
+    except OSError as exc:
+        await query.answer(f"Failed to queue: {exc}", show_alert=True)
+        return
+    logger.info("docker %s %s requested by %s", verb, name, _describe_sender(update))
+    await query.answer(f"⏳ {verb} {name} requested — result will follow")
 
 
 async def cd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -489,6 +593,8 @@ def main() -> None:
     application.add_handler(CommandHandler("pwd", pwd))
     application.add_handler(CommandHandler("bans", bans))
     application.add_handler(CommandHandler("ufw", ufw))
+    application.add_handler(CommandHandler("docker", docker_ps))
+    application.add_handler(CallbackQueryHandler(docker_action, pattern=r"^dk:"))
     application.add_handler(CommandHandler("cd", cd))
     application.add_handler(CommandHandler("env", env_command))
     application.add_handler(

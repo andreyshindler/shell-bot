@@ -1,0 +1,8 @@
+[Unit]
+Description=shell-bot docker watcher (one-shot, triggered by docker-watcher.timer)
+
+[Service]
+Type=oneshot
+User=komodo
+WorkingDirectory=/home/komodo/projects/shell-bot
+ExecStart=/home/komodo/projects/shell-bot/docker-watcher.sh
