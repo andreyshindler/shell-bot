@@ -6,6 +6,10 @@ shell_bot.log
 shell_bot.log.*
 .rebuild-requested
 rebuild-watcher.log
+docker-watcher.log
+.docker-request
+.docker-request.processing
+.docker-status.txt
 .venv/
 __pycache__/
 *.pyc

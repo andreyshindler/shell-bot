@@ -255,3 +255,36 @@ The script writes `/home/komodo/projects/.ufw-status.txt` (→ `~/.ufw-status.tx
 in the container). It reads blocked-packet lines from `/var/log/ufw.log`, or
 falls back to the kernel journal (`journalctl -k`) if that log isn't present.
 Adjust the hardcoded `OUT` path in the script if your projects dir differs.
+
+#### docker controls (`/docker`)
+
+`/docker` lists every container grouped by compose project, each with inline
+buttons: **⏹ stop / ⟳ restart** for running ones, **▶ start** for stopped ones.
+
+The container has **no docker access by design** (that's what makes it safe to
+run arbitrary commands), so it can't run `docker` itself. Instead — the same
+host↔container split as the rebuild watcher:
+
+- A host `docker-watcher` (runs as `komodo`, who is in the `docker` group)
+  refreshes `.docker-status.txt` (the list `/docker` reads and builds buttons
+  from) every ~5 s.
+- Tapping a button **queues** a one-line request (`<verb> <name>`) to
+  `.docker-request`; the watcher claims it, and runs it **only** if the verb is
+  `start`/`stop`/`restart` **and** the name is a real container. So a compromised
+  bot could at worst stop/start existing containers — never `exec`, `rm`,
+  `create`, or anything that reaches the host. The result is DM'd back.
+
+Install the watcher once (mirrors `rebuild-watcher`):
+
+```bash
+sudo chmod +x /home/komodo/projects/shell-bot/docker-watcher.sh
+sudo cp /home/komodo/projects/shell-bot/docker-watcher.service \
+        /home/komodo/projects/shell-bot/docker-watcher.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now docker-watcher.timer
+```
+
+Logs land in `docker-watcher.log` next to the script. Adjust the hardcoded
+`/home/komodo/projects` paths in `docker-watcher.sh` (and the `WorkingDirectory`
+in `docker-watcher.service`) if your layout differs. Until the timer runs,
+`/docker` just says "no snapshot yet."
