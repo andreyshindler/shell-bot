@@ -258,8 +258,13 @@ Adjust the hardcoded `OUT` path in the script if your projects dir differs.
 
 #### docker controls (`/docker`)
 
-`/docker` lists every container grouped by compose project, each with inline
-buttons: **⏹ stop / ⟳ restart** for running ones, **▶ start** for stopped ones.
+`/docker` opens a drill-down: **projects → containers → action**. The first
+screen lists every compose project with a running/total count; tap one to see
+its containers (full names, 🟢 running / ⚪ stopped); tap a container for its
+**🛑 Stop / 🔄 Restart** (running) or **▶️ Start** (stopped) buttons, with
+back-links at each level. The drill-down keeps the list readable even with
+dozens of containers across many projects, and makes stopping a prod container a
+deliberate two-tap action rather than one mis-tap in a long flat list.
 
 The container has **no docker access by design** (that's what makes it safe to
 run arbitrary commands), so it can't run `docker` itself. Instead — the same

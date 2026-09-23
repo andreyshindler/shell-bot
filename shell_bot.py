@@ -405,6 +405,95 @@ def _read_docker_containers():
     return rows, age
 
 
+def _docker_group(rows):
+    """Group rows into an ordered {project: [(name, state), ...]}."""
+    order, groups = [], {}
+    for project, name, state in rows:
+        if project not in groups:
+            groups[project] = []
+            order.append(project)
+        groups[project].append((name, state))
+    return order, groups
+
+
+def _cb_ok(*buttons):
+    """Keep only buttons whose callback_data fits Telegram's 64-byte cap."""
+    return [b for b in buttons if len(b.callback_data.encode()) <= 64]
+
+
+def _docker_projects_view(rows, age):
+    order, groups = _docker_group(rows)
+    lines = [
+        f"🐳 Docker — {len(order)} projects, {len(rows)} containers "
+        f"(snapshot {age}s old)",
+        "",
+        "Tap a project:",
+    ]
+    keyboard = []
+    for project in order:
+        items = groups[project]
+        up = sum(1 for _, state in items if state == "running")
+        keyboard.append(
+            _cb_ok(
+                InlineKeyboardButton(
+                    f"{project}  ·  {up}/{len(items)} up",
+                    callback_data=f"dk:p:{project}",
+                )
+            )
+        )
+    keyboard = [row for row in keyboard if row]
+    return "\n".join(lines), InlineKeyboardMarkup(keyboard)
+
+
+def _docker_project_view(rows, project):
+    _, groups = _docker_group(rows)
+    if project not in groups:
+        return None, None
+    lines = [f"📁 {project}", "", "Tap a container:"]
+    keyboard = []
+    for name, state in sorted(groups[project]):
+        icon = "🟢" if state == "running" else "⚪"
+        # Full-width button per container → the whole name is always visible.
+        row = _cb_ok(
+            InlineKeyboardButton(f"{icon} {name} ({state})", callback_data=f"dk:c:{name}")
+        )
+        if row:
+            keyboard.append(row)
+    keyboard.append([InlineKeyboardButton("⬅ Projects", callback_data="dk:home")])
+    return "\n".join(lines), InlineKeyboardMarkup(keyboard)
+
+
+def _docker_container_view(rows, name, note=""):
+    match = next(((p, s) for p, n, s in rows if n == name), None)
+    if match is None:
+        return None, None
+    project, state = match
+    lines = [f"📦 {name}", f"project: {project}", f"state: {state}"]
+    if note:
+        lines += ["", note]
+    if state == "running":
+        actions = _cb_ok(
+            InlineKeyboardButton("🛑 Stop", callback_data=f"dk:do:stop:{name}"),
+            InlineKeyboardButton("🔄 Restart", callback_data=f"dk:do:restart:{name}"),
+        )
+    else:
+        actions = _cb_ok(
+            InlineKeyboardButton("▶️ Start", callback_data=f"dk:do:start:{name}")
+        )
+    keyboard = [actions] if actions else []
+    keyboard.append([InlineKeyboardButton(f"⬅ {project}", callback_data=f"dk:p:{project}")])
+    return "\n".join(lines), InlineKeyboardMarkup(keyboard)
+
+
+async def _docker_edit(query, text, keyboard) -> None:
+    """Edit the message in place, ignoring Telegram's 'not modified' complaint."""
+    try:
+        await query.edit_message_text(text, reply_markup=keyboard)
+    except Exception as exc:  # noqa: BLE001 - best-effort navigation
+        if "not modified" not in str(exc).lower():
+            logger.warning("docker view edit failed: %s", exc)
+
+
 async def docker_ps(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update):
         logger.warning("REJECTED /docker from %s", _describe_sender(update))
@@ -420,31 +509,8 @@ async def docker_ps(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not rows:
         await update.message.reply_text("No containers found.")
         return
-
-    lines = [f"🐳 containers — snapshot {age}s old"]
-    keyboard = []
-    current_project = None
-    for project, name, state in rows:
-        if project != current_project:
-            lines.append(f"\n📁 `{project}`")
-            current_project = project
-        running = state == "running"
-        lines.append(f"{'🟢' if running else '⚪'} `{name}` — {state}")
-        if running:
-            row = [
-                InlineKeyboardButton(f"⏹ {name}", callback_data=f"dk:stop:{name}"),
-                InlineKeyboardButton("⟳", callback_data=f"dk:restart:{name}"),
-            ]
-        else:
-            row = [InlineKeyboardButton(f"▶ {name}", callback_data=f"dk:start:{name}")]
-        # callback_data is capped at 64 bytes; skip the (very rare) over-long name.
-        if all(len(b.callback_data.encode()) <= 64 for b in row):
-            keyboard.append(row)
-    await update.message.reply_text(
-        "\n".join(lines),
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-    )
+    text, keyboard = _docker_projects_view(rows, age)
+    await update.message.reply_text(text, reply_markup=keyboard)
 
 
 async def docker_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -455,30 +521,72 @@ async def docker_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         if query is not None:
             await query.answer("Not authorized", show_alert=True)
         return
+
+    rows, age = _read_docker_containers()
+    if rows is None:
+        await query.answer("Snapshot gone — send /docker again", show_alert=True)
+        return
+
     data = query.data or ""
-    try:
-        _, verb, name = data.split(":", 2)
-    except ValueError:
-        await query.answer("Bad request")
+    verb = data.split(":", 1)[1] if ":" in data else ""
+
+    # --- navigation ---
+    if verb == "home":
+        await query.answer()
+        await _docker_edit(query, *_docker_projects_view(rows, age))
         return
-    if verb not in DOCKER_VERBS:
-        await query.answer("Unknown action")
+    if verb.startswith("p:"):
+        project = data.split(":", 2)[2]
+        text, keyboard = _docker_project_view(rows, project)
+        await query.answer()
+        if text is None:
+            await _docker_edit(query, *_docker_projects_view(rows, age))
+        else:
+            await _docker_edit(query, text, keyboard)
         return
-    # Only queue actions for containers we actually listed (defense in depth —
-    # the host docker-watcher re-validates the name and verb before running it).
-    rows, _ = _read_docker_containers()
-    known = {name for _, name, _ in rows} if rows else set()
-    if name not in known:
-        await query.answer("Unknown container — refresh /docker", show_alert=True)
+    if verb.startswith("c:"):
+        name = data.split(":", 2)[2]
+        text, keyboard = _docker_container_view(rows, name)
+        await query.answer()
+        if text is None:
+            await _docker_edit(query, *_docker_projects_view(rows, age))
+        else:
+            await _docker_edit(query, text, keyboard)
         return
-    try:
-        with DOCKER_REQUEST.open("a", encoding="utf-8") as fh:
-            fh.write(f"{verb} {name}\n")
-    except OSError as exc:
-        await query.answer(f"Failed to queue: {exc}", show_alert=True)
+
+    # --- action: queue a bounded start/stop/restart request ---
+    if verb.startswith("do:"):
+        try:
+            _, _, action, name = data.split(":", 3)
+        except ValueError:
+            await query.answer("Bad request")
+            return
+        if action not in DOCKER_VERBS:
+            await query.answer("Unknown action")
+            return
+        # Only queue actions for containers we actually listed (defense in depth —
+        # the host docker-watcher re-validates the name and verb before running).
+        if name not in {n for _, n, _ in rows}:
+            await query.answer("Unknown container — refresh /docker", show_alert=True)
+            return
+        try:
+            with DOCKER_REQUEST.open("a", encoding="utf-8") as fh:
+                fh.write(f"{action} {name}\n")
+        except OSError as exc:
+            await query.answer(f"Failed to queue: {exc}", show_alert=True)
+            return
+        logger.info(
+            "docker %s %s requested by %s", action, name, _describe_sender(update)
+        )
+        await query.answer(f"⏳ {action} {name} queued")
+        text, keyboard = _docker_container_view(
+            rows, name, note=f"⏳ {action} queued — result will follow shortly."
+        )
+        if text is not None:
+            await _docker_edit(query, text, keyboard)
         return
-    logger.info("docker %s %s requested by %s", verb, name, _describe_sender(update))
-    await query.answer(f"⏳ {verb} {name} requested — result will follow")
+
+    await query.answer("Unknown action")
 
 
 async def cd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
